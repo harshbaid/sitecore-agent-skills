@@ -1,0 +1,12 @@
+# Credentials - never commit
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.log
