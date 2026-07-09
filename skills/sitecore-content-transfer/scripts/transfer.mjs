@@ -198,6 +198,8 @@ async function main() {
   const intervalMs = Number(args["poll-interval"]) * 1000;
   const timeoutMs = Number(args["poll-timeout"]) * 1000;
 
+  if (!Number.isFinite(intervalMs) || intervalMs <= 0) fail("--poll-interval must be a positive number of seconds.");
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) fail("--poll-timeout must be a positive number of seconds.");
   if (!sourceHost || !targetHost) fail("--source-host and --target-host are required.");
   if (sourceHost === targetHost) fail("Source and target host are identical - nothing to transfer.");
   if (paths.length === 0) fail("At least one --path is required.");
@@ -249,6 +251,7 @@ async function main() {
       : await getToken(targetClientId, targetClientSecret);
   log(`[1/8] Authenticated.`);
 
+  let transferCreated = false;
   try {
     // -- 2. Create the transfer operation on the SOURCE ---------------------
     const createRes = await request(`${ctBase(sourceHost)}/transfers`, {
@@ -267,6 +270,7 @@ async function main() {
       }),
     });
     await expectOk(createRes, "Create transfer");
+    transferCreated = true;
     log(`[2/8] Transfer created on source (TransferId: ${transferId}).`);
 
     // -- 3. Poll source until chunking completes ----------------------------
@@ -288,6 +292,11 @@ async function main() {
       },
     });
     const chunkSets = status.ChunkSetsMetadata ?? [];
+    if (chunkSets.length === 0) {
+      throw new Error(
+        "Source transfer completed but produced no chunk sets - verify the item path(s) exist in the source database."
+      );
+    }
     log(
       `[3/8] Source chunking complete: ${chunkSets.length} chunk set(s), ` +
         `${chunkSets.reduce((n, cs) => n + (cs.TotalItemCount ?? 0), 0)} item(s) total.`
@@ -301,11 +310,17 @@ async function main() {
       for (let chunkId = 0; chunkId < cs.ChunkCount; chunkId++) {
         const chunkUrl = `/transfers/${transferId}/chunksets/${cs.ChunkSetId}/chunks/${chunkId}`;
         const getRes = await request(`${ctBase(sourceHost)}${chunkUrl}`, {
-          headers: authHeaders(sourceToken),
+          // Ask for the raw stream. An Accept: application/json here risks a
+          // JSON/base64 representation of the chunk instead of the bytes.
+          headers: {
+            Authorization: `Bearer ${sourceToken}`,
+            Accept: "application/octet-stream, */*",
+          },
         });
         await expectOk(getRes, `Download chunk ${chunkId} of set ${cs.ChunkSetId}`);
         const params = dispositionParams(getRes.headers.get("content-disposition"));
-        const isMedia = params.ismedia === "true";
+        // .NET commonly serializes booleans as "True"/"False" - compare case-insensitively.
+        const isMedia = (params.ismedia ?? "").toLowerCase() === "true";
         itemsProcessed += Number(params.itemsprocessed ?? 0);
         itemsSkipped += Number(params.itemsskipped ?? 0);
         // Forward the stream exactly as received: media chunks stay compressed,
@@ -334,6 +349,11 @@ async function main() {
       );
       await expectOk(completeRes, `Complete chunk set ${cs.ChunkSetId}`);
       const { ContentTransferFileName } = await completeRes.json();
+      if (!ContentTransferFileName) {
+        throw new Error(
+          `Chunk set ${cs.ChunkSetId} completed but no ContentTransferFileName was returned.`
+        );
+      }
       raifFiles.push(ContentTransferFileName);
       summary.chunkSets.push({
         chunkSetId: cs.ChunkSetId,
@@ -381,22 +401,35 @@ async function main() {
       // The aggregate transfer status is known to under-report (it can show
       // Unknown/0 while items were actually written). Per-item status is the
       // source of truth, so look the transfer up and inspect its items.
-      const listRes = await request(`${itBase(targetHost)}/transfers?page=1&pageSize=50`, {
-        headers: authHeaders(targetToken),
-      });
-      await expectOk(listRes, "List transfers on target");
-      const listBody = await listRes.json();
-      const transfers = Array.isArray(listBody) ? listBody : listBody.Transfers ?? listBody.Items ?? [];
-      const entry = transfers.find((t) => t.SourceName === raif);
-
-      let items = [];
-      if (entry) {
-        const itemsRes = await request(
-          `${itBase(targetHost)}/transfers/databases/${database}/sources/${encodeURIComponent(entry.Id)}/items?page=1&pageSize=100`,
+      let entry;
+      for (let page = 1; page <= 5 && !entry; page++) {
+        const listRes = await request(
+          `${itBase(targetHost)}/transfers?page=${page}&pageSize=50`,
           { headers: authHeaders(targetToken) }
         );
-        if (itemsRes.ok) {
-          items = (await itemsRes.json()).Items ?? [];
+        await expectOk(listRes, "List transfers on target");
+        const listBody = await listRes.json();
+        const transfers = listBody.Transfers ?? (Array.isArray(listBody) ? listBody : []);
+        if (transfers.length === 0) break;
+        entry = transfers.find((t) => t.SourceName === raif);
+      }
+      if (!entry) {
+        log(`[7/8] WARNING: no consumed-transfer entry found for ${raif} - verify items on the target manually.`);
+      }
+
+      const items = [];
+      if (entry) {
+        for (let page = 1; page <= 20; page++) {
+          const itemsRes = await request(
+            `${itBase(targetHost)}/transfers/databases/${database}/sources/${encodeURIComponent(entry.Id)}/items?page=${page}&pageSize=50`,
+            { headers: authHeaders(targetToken) }
+          );
+          if (!itemsRes.ok) break;
+          const pageBody = await itemsRes.json();
+          const pageItems = pageBody.Items ?? [];
+          items.push(...pageItems);
+          const totalCount = pageBody.TotalCount ?? items.length;
+          if (pageItems.length === 0 || items.length >= totalCount) break;
         }
       }
       const transferred = items.filter((i) => i.IsTransferred).length;
@@ -418,7 +451,9 @@ async function main() {
     }
   } finally {
     // -- 8. Clean up the transfer operation on the SOURCE -------------------
-    if (!args["keep-transfer"]) {
+    if (!transferCreated) {
+      // Create never succeeded; nothing to clean up.
+    } else if (!args["keep-transfer"]) {
       try {
         await request(`${ctBase(sourceHost)}/transfers/${transferId}`, {
           method: "DELETE",
@@ -437,7 +472,11 @@ async function main() {
   const anyFailed = summary.consumed.some(
     (c) => c.itemsFailed.length > 0 || c.blobState === "TransferredWithErrors"
   );
-  summary.result = anyFailed || anySkipped ? "completed-with-warnings" : "success";
+  // No per-item data means nothing was actually verified - never call that success.
+  const anyUnverified =
+    summary.consumed.length === 0 || summary.consumed.some((c) => c.itemsSeen === 0);
+  summary.result =
+    anyFailed || anySkipped || anyUnverified ? "completed-with-warnings" : "success";
 
   console.log("\n=== TRANSFER SUMMARY ===");
   console.log(JSON.stringify(summary, null, 2));
