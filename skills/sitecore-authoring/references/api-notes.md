@@ -68,10 +68,10 @@ Authoring writes land in the **master** database only. Nothing is live until pub
 Experience Edge.
 
 ```graphql
-mutation PublishItem($ids: [ID]!) {
+mutation PublishItem($ids: [ID]!, $languages: [String] = ["en"]) {
   publishItem(input: {
     rootItemIds: $ids
-    languages: ["en-US"]                 # match your content language
+    languages: $languages                # defaults to ["en"]; pass ["en-US"] etc. to match your content
     targetDatabases: ["experienceedge"]
     sourceDatabase: "master"
     publishItemMode: FULL                # FULL re-publishes even unchanged fields

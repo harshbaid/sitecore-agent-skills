@@ -54,12 +54,12 @@ node scripts/edge-diff.mjs \
   --live-context <liveContextId> \
   --preview-context <previewContextId> \
   --path "/sitecore/content/MySite/Home/Data/<datasource>" \
-  --language en-US \
   --fields "Title,Text"
 ```
 
-The `sitecoreContextId` in the Edge URL is the auth - no token needed. The script prints a verdict
-and a machine-readable summary. Interpret it:
+`--language` defaults to `en`; add `--language en-US` (or your content culture, per triage point 3
+above) if the item is authored in another language. The `sitecoreContextId` in the Edge URL is the
+auth - no token needed. The script prints a verdict and a machine-readable summary. Interpret it:
 
 | Verdict | Meaning | Do |
 |---|---|---|

@@ -7,18 +7,19 @@
  *     --live-context <liveContextId> \
  *     --preview-context <previewContextId> \
  *     --path "/sitecore/content/MySite/Home" \
- *     --language en-US \
  *     --fields "Title,Text"
  *
  * The sitecoreContextId in the Edge URL IS the auth - no bearer token needed. Get the live and
  * preview context ids from your XM Cloud environment (Deploy portal, or your app's env vars:
  * the "live" one serves the site; the "preview" one is used by editing/preview).
  *
+ * --language defaults to "en". Many sites author in another culture (often "en-US"); pass
+ * --language en-US (or set SC_EDGE_LANGUAGE) if a read comes back empty.
  * --path accepts a content path OR an item ID (Edge treats both interchangeably in `path`).
  * Omit --fields to just check existence on each context. --cache-bust appends a throwaway query
  * param so the request skips the CDN cache in front of Edge and hits origin.
  *
- * Env-var fallbacks: SC_EDGE_LIVE_CONTEXT, SC_EDGE_PREVIEW_CONTEXT, SC_EDGE_ENDPOINT.
+ * Env-var fallbacks: SC_EDGE_LIVE_CONTEXT, SC_EDGE_PREVIEW_CONTEXT, SC_EDGE_ENDPOINT, SC_EDGE_LANGUAGE.
  *
  * Exit codes: 0 = live and preview agree (no publish gap); 2 = publish gap / field drift found;
  * 1 = error or item not found on either context.
@@ -35,7 +36,7 @@ const flag = (name) => args.includes(`--${name}`);
 const liveCtx = opt('live-context') ?? process.env.SC_EDGE_LIVE_CONTEXT;
 const prevCtx = opt('preview-context') ?? process.env.SC_EDGE_PREVIEW_CONTEXT;
 const target = opt('path');
-const language = opt('language') ?? 'en-US';
+const language = opt('language') ?? process.env.SC_EDGE_LANGUAGE ?? 'en';
 const fields = (opt('fields') ?? '').split(',').map((s) => s.trim()).filter(Boolean);
 const cacheBust = flag('cache-bust');
 const endpoint =
@@ -46,7 +47,7 @@ const endpoint =
 if (!liveCtx || !prevCtx || !target) {
   console.error(
     'Usage: node scripts/edge-diff.mjs --live-context <id> --preview-context <id> ' +
-      '--path "<path-or-item-id>" [--language en-US] [--fields "A,B"] [--cache-bust]\n' +
+      '--path "<path-or-item-id>" [--language en] [--fields "A,B"] [--cache-bust]\n' +
       '(context ids may also come from SC_EDGE_LIVE_CONTEXT / SC_EDGE_PREVIEW_CONTEXT)'
   );
   process.exit(1);
