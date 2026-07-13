@@ -1,0 +1,15 @@
+{
+  "name": "sitecore-authoring",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone multi-environment client for the XM Cloud Authoring & Management GraphQL API (DEV/UAT/PROD in parallel).",
+  "scripts": {
+    "sc": "tsx src/cli.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0"
+  }
+}

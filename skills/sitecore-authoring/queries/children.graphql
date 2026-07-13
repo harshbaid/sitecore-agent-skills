@@ -1,0 +1,17 @@
+# List an item's immediate children - handy for building a work-list before a
+# bulk get/set/compare. Run with:
+#   npm run sc -- raw --env dev --query-file ./queries/children.graphql --vars '{"p":"/sitecore/content"}'
+query($p: String!) {
+  item(where: { path: $p, language: "en" }) {
+    name
+    path
+    children(first: 50) {
+      nodes {
+        name
+        path
+        hasChildren
+        template { name }
+      }
+    }
+  }
+}
