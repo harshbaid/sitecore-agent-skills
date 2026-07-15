@@ -33,6 +33,9 @@ moment - they are complementary, not competing.
 | Skill | What it does |
 |---|---|
 | [sitecore-content-transfer](skills/sitecore-content-transfer/SKILL.md) | Moves item trees (including page presentation) between two XM Cloud / SitecoreAI environments via the Content Transfer + Item Transfer APIs |
+| [sitecore-authoring](skills/sitecore-authoring/SKILL.md) | Reads, writes, and compares content across MULTIPLE environments at once (DEV/UAT/PROD) via the Authoring & Management GraphQL API, plus the higher-level Agent API v2.0 (revertable jobs). Ships a `sitecore-content-audit` sub-agent for bulk drift audits |
+| [sitecore-publish-verify](skills/sitecore-publish-verify/SKILL.md) | Diagnoses "I published but it is not showing on the live site" by walking the pipeline (Master -> Edge preview -> Edge live -> front-end cache) with an Edge live-vs-preview diff, then fixes the publish gap or cache staleness |
+| [sitecore-xmcloud-config-review](skills/sitecore-xmcloud-config-review/SKILL.md) | Reviews an XM Cloud platform project's `App_Config` patches against XM-Cloud-appropriate best practices and recommends safe hardening (item naming, media guardrails, language fallback, GraphQL limits, buckets) |
 
 ## Installation
 
@@ -52,6 +55,14 @@ cp -r sitecore-agent-skills/skills/sitecore-content-transfer ~/.claude/skills/
 
 Then just ask: *"copy /sitecore/content/MySite/Home from prod to dev"* -
 Claude discovers the skill by its description and follows it.
+
+The same copy pattern works for any skill folder. Two notes:
+
+- `sitecore-authoring` is a small TypeScript CLI, so run `npm install` once inside its
+  folder (it pulls only `tsx` + `typescript`). It also ships a companion sub-agent -
+  copy `skills/sitecore-authoring/agents/sitecore-content-audit.md` into `.claude/agents/`.
+- `sitecore-content-transfer` and `sitecore-publish-verify` are zero-dependency Node
+  scripts - no install needed.
 
 ### Cursor / other agents
 
@@ -76,10 +87,12 @@ node skills/sitecore-content-transfer/scripts/transfer.mjs \
 
 ## Prerequisites
 
-- Node.js >= 20 (no npm installs - the script has zero dependencies)
+- Node.js >= 20. `sitecore-content-transfer` and `sitecore-publish-verify` are
+  zero-dependency; `sitecore-authoring` needs a one-time `npm install` in its folder.
 - A SitecoreAI **organization** automation client (created by an Org
-  Admin/Owner in Deploy > Credentials). See
-  [.env.example](skills/sitecore-content-transfer/.env.example).
+  Admin/Owner in Deploy > Credentials) for the content and authoring skills. See each
+  skill's `.env.example`. The `sitecore-authoring` Agent-API layer additionally uses
+  per-environment clients.
 
 ## Safety
 
@@ -94,10 +107,11 @@ node skills/sitecore-content-transfer/scripts/transfer.mjs \
 
 ## Contributing
 
-Ideas queued up: publish-and-verify, Authoring GraphQL audits, serialized
-content diffing. PRs and issues welcome - the bar for a skill is: a SKILL.md
-an agent can follow cold, a zero-dependency script where one helps, and any
-gotchas written down where the agent will find them.
+Still on the list: serialized content diffing, and more Edge/publishing helpers.
+(Publish-and-verify and Authoring GraphQL audits have landed - see the skills table.)
+PRs and issues welcome - the bar for a skill is: a SKILL.md an agent can follow cold,
+a low- or zero-dependency script where one helps, and any gotchas written down where
+the agent will find them.
 
 ## License
 

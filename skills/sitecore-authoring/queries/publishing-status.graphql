@@ -1,0 +1,10 @@
+# Poll the status of a publish started by publish-item.graphql.
+#   npm run sc -- raw --env dev --query-file ./queries/publishing-status.graphql --vars '{"op":"<operationId>"}'
+query PublishingStatus($op: String!) {
+  publishingStatus(publishingOperationId: $op) {
+    isDone
+    isFailed
+    state
+    processed
+  }
+}

@@ -1,0 +1,21 @@
+# Publish an item to Experience Edge (authoring writes to master only; this is
+# how you make a change go live). Returns an operationId you can poll with
+# publishing-status.graphql.
+#
+# $languages defaults to ["en"]. Pass your content culture(s) via --vars if it
+# differs - many XM Cloud sites author in "en-US":
+#   npm run sc -- raw --env dev --query-file ./queries/publish-item.graphql --vars '{"ids":["<item-guid>"]}'
+#   npm run sc -- raw --env dev --query-file ./queries/publish-item.graphql --vars '{"ids":["<item-guid>"],"languages":["en-US"]}'
+mutation PublishItem($ids: [ID]!, $languages: [String] = ["en"]) {
+  publishItem(input: {
+    rootItemIds: $ids
+    languages: $languages
+    targetDatabases: ["experienceedge"]
+    sourceDatabase: "master"
+    publishItemMode: FULL
+    publishSubItems: false
+    publishRelatedItems: false
+  }) {
+    operationId
+  }
+}
